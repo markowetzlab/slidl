@@ -1,4 +1,4 @@
-SliDL: a Python library for deep learning on whole-slide images
+SliDL: a Python library for pre- and post-processing tasks for applying deep learning to whole-slide images
 =====
 [SliDL](https://github.com/markowetzlab/slidl) is a Python library for performing deep learning image analysis on whole-slide images (WSIs), including deep tissue, artefact, and background filtering, tile extraction, model inference, model evaluation and more.
 

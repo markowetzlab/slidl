@@ -6,8 +6,8 @@
 Welcome to SliDL's documentation!
 ==================================
 
-``SliDL`` is a Python library for performing pre- and post-processing tasks for applying
-deep learning to whole-slide images (WSIs), including deep tissue detection, artefact
+``SliDL`` is a Python library of pre- and post-processing tools for applying deep
+learning to whole-slide images (WSIs), including deep tissue detection, artefact
 and background filtering, digital annotation parsing, tile extraction, model inference,
 model evaluation and more. It supports both classification and segmentation tasks at the
 tile level.

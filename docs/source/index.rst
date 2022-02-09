@@ -4,7 +4,7 @@
    contain the root `toctree` directive.
 
 Welcome to SliDL's documentation!
-==================================
+=================================
 
 ``SliDL`` is a Python library of pre- and post-processing tools for applying deep
 learning to whole-slide images (WSIs), including deep tissue detection, artefact

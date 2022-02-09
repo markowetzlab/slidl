@@ -15,11 +15,15 @@ with open(REQUIREMENTS_FILE) as handle:
 with open(README_FILE) as readme_file:
     readme = readme_file.read()
 
+def local_scheme(version):
+    return ""
+
 setup(
     name="slidl",
     package="slidl",
     packages=find_packages(),
     use_scm_version={
+        "local_scheme": local_scheme,
         "write_to": "slidl/_version.py",
         "write_to_template": '__version__ = "{version}"\n',
     },
@@ -35,18 +39,19 @@ setup(
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
     ],
-    description="SliDL: a Python library for pre- and post-processing tasks for applying deep learning to whole-slide images ",
+    description="SliDL: a Python library of pre- and post-processing tools for applying deep learning to whole-slide images",
+    long_description_content_type="text/markdown",
     long_description=readme,
     license="GNU General Public License v3",
     include_package_data=True,
-    keywords=["pathology"],
+    keywords=["ai", "deep learning", "pathology"],
     setup_requires=["setuptools_scm"],
     install_requires=requirements,
     tests_require=requirements,
     url="https://github.com/markowetzlab/slidl",
     project_urls={
         "Bug Tracker": "https://github.com/markowetzlab/slidl/issues",
-        "Documentation": "https://github.com/markowetzlab/slidl-tutorial",
+        "Documentation": "https://slidl.readthedocs.io",
         "Source Code": "https://github.com/markowetzlab/slidl",
     },
     zip_safe=False,

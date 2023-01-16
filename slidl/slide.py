@@ -1817,25 +1817,26 @@ class Slide:
 
         pathSlideDataloader = torch.utils.data.DataLoader(pathSlideDataset, batch_size=batchSize, shuffle=False, num_workers=numWorkers)
         classifierPredictionTileAddresses = []
-        for inputs in tqdm(pathSlideDataloader, disable=silent):
-            inputTile = inputs['image'].to(device)
-            output = trainedModel(inputTile)
-            output = output.to(device)
+        with torch.no_grad():
+            for inputs in tqdm(pathSlideDataloader, disable=silent):
+                inputTile = inputs['image'].to(device)
+                output = trainedModel(inputTile)
+                output = output.to(device)
 
-            batch_prediction = torch.nn.functional.softmax(
-                output, dim=1).cpu().data.numpy()
+                batch_prediction = torch.nn.functional.softmax(
+                    output, dim=1).cpu().data.numpy()
 
-            for index in range(len(inputTile)):
-                tileAddress = (inputs['tileAddress'][0][index].item(),
-                               inputs['tileAddress'][1][index].item())
-                preds = batch_prediction[index, ...].tolist()
-                if len(preds) != len(classNames):
-                    raise ValueError('Model has '+str(len(preds))+' classes but only '+str(len(classNames))+' class names were provided in the classes argument')
-                prediction = {}
-                for i, pred in enumerate(preds):
-                    prediction[classNames[i]] = pred
-                self.appendTag(tileAddress, 'classifierInferencePrediction', prediction)
-                classifierPredictionTileAddresses.append(tileAddress)
+                for index in range(len(inputTile)):
+                    tileAddress = (inputs['tileAddress'][0][index].item(),
+                                inputs['tileAddress'][1][index].item())
+                    preds = batch_prediction[index, ...].tolist()
+                    if len(preds) != len(classNames):
+                        raise ValueError('Model has '+str(len(preds))+' classes but only '+str(len(classNames))+' class names were provided in the classes argument')
+                    prediction = {}
+                    for i, pred in enumerate(preds):
+                        prediction[classNames[i]] = pred
+                    self.appendTag(tileAddress, 'classifierInferencePrediction', prediction)
+                    classifierPredictionTileAddresses.append(tileAddress)
         if len(classifierPredictionTileAddresses) > 0:
             self.classifierPredictionTileAddresses = classifierPredictionTileAddresses
         else:
@@ -1893,63 +1894,64 @@ class Slide:
 
         pathSlideDataloader = torch.utils.data.DataLoader(pathSlideDataset, batch_size=batchSize, shuffle=False, num_workers=numWorkers)
         segmenterPredictionTileAddresses = []
-        counter = 0
-        for inputs in tqdm(pathSlideDataloader, disable=silent):
-            inputTile = inputs['image'].to(device)
 
-            # input into net
-            output = trainedModel(inputTile)
-            output = output.to(device)
+        with torch.no_grad():
+            for inputs in tqdm(pathSlideDataloader, disable=silent):
+                inputTile = inputs['image'].to(device)
 
-            if trainedModel.n_classes > 1:
-                batch_probs = F.softmax(output, dim=1)
-            else:
-                batch_probs = torch.sigmoid(output)
+                # input into net
+                output = trainedModel(inputTile)
+                output = output.to(device)
 
-            for index in range(len(inputTile)):
-                tileAddress = (inputs['tileAddress'][0][index].item(),
-                               inputs['tileAddress'][1][index].item())
+                if trainedModel.n_classes > 1:
+                    batch_probs = F.softmax(output, dim=1)
+                else:
+                    batch_probs = torch.sigmoid(output)
 
-                tile_probs = batch_probs[index, ...]
+                for index in range(len(inputTile)):
+                    tileAddress = (inputs['tileAddress'][0][index].item(),
+                                inputs['tileAddress'][1][index].item())
 
-                tile_probs = tile_probs.squeeze(0)
+                    tile_probs = batch_probs[index, ...]
 
-                tf = transforms.Compose([
-                    transforms.ToPILImage(),
-                    transforms.Resize(pathSlideDataset.tileSize),
-                    transforms.ToTensor() # converts from HWC to CWH and divides by 255
-                ])
+                    tile_probs = tile_probs.squeeze(0)
 
-                tile_probs = tf(tile_probs.cpu())
-                full_mask = tile_probs.squeeze().cpu().numpy()
+                    tf = transforms.Compose([
+                        transforms.ToPILImage(),
+                        transforms.Resize(pathSlideDataset.tileSize),
+                        transforms.ToTensor() # converts from HWC to CWH and divides by 255
+                    ])
 
-                if (len(full_mask.shape) == 2 and len(classNames) == 1):
-                    pass
-                elif (len(full_mask.shape) == 2 and len(classNames) != 1):
-                    raise ValueError('Model has 1 output class but '+str(len(classNames))+' class names were provided in the classes argument')
-                elif full_mask.shape[0] != len(classNames):
-                    raise ValueError('Model has '+str(full_mask.shape[-1])+' output classes but only '+str(len(classNames))+' class names were provided in the classes argument')
+                    tile_probs = tf(tile_probs.cpu())
+                    full_mask = tile_probs.squeeze().cpu().numpy()
 
-                segmentation_masks = {}
+                    if (len(full_mask.shape) == 2 and len(classNames) == 1):
+                        pass
+                    elif (len(full_mask.shape) == 2 and len(classNames) != 1):
+                        raise ValueError('Model has 1 output class but '+str(len(classNames))+' class names were provided in the classes argument')
+                    elif full_mask.shape[0] != len(classNames):
+                        raise ValueError('Model has '+str(full_mask.shape[-1])+' output classes but only '+str(len(classNames))+' class names were provided in the classes argument')
 
-                if len(full_mask.shape) == 2: # only one output class
-                    if dtype == 'int':
-                        segmentation_masks[classNames[0]] = (full_mask * 255).astype(np.uint8)
-                    elif dtype == 'float':
-                        segmentation_masks[classNames[0]] = full_mask
-                    else:
-                        raise ValueError("'dtype' must be 'float' or 'int'")
-                else: # multiple output classes
-                    for class_index in len(classNames):
+                    segmentation_masks = {}
+
+                    if len(full_mask.shape) == 2: # only one output class
                         if dtype == 'int':
-                            segmentation_masks[classNames[class_index]] = (full_mask[class_index,...] * 255).astype(np.uint8)
+                            segmentation_masks[classNames[0]] = (full_mask * 255).astype(np.uint8)
                         elif dtype == 'float':
-                            segmentation_masks[classNames[class_index]] = full_mask[class_index,...]
+                            segmentation_masks[classNames[0]] = full_mask
                         else:
                             raise ValueError("'dtype' must be 'float' or 'int'")
+                    else: # multiple output classes
+                        for class_index in len(classNames):
+                            if dtype == 'int':
+                                segmentation_masks[classNames[class_index]] = (full_mask[class_index,...] * 255).astype(np.uint8)
+                            elif dtype == 'float':
+                                segmentation_masks[classNames[class_index]] = full_mask[class_index,...]
+                            else:
+                                raise ValueError("'dtype' must be 'float' or 'int'")
 
-                self.appendTag(tileAddress, 'segmenterInferencePrediction', segmentation_masks)
-                segmenterPredictionTileAddresses.append(tileAddress)
+                    self.appendTag(tileAddress, 'segmenterInferencePrediction', segmentation_masks)
+                    segmenterPredictionTileAddresses.append(tileAddress)
 
         if len(segmenterPredictionTileAddresses) > 0:
             self.segmenterPredictionTileAddresses = segmenterPredictionTileAddresses

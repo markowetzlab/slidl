@@ -88,7 +88,8 @@ class Slide:
         self.__verbose = verbose
 
         if slideFilePath[-4:] == '.pml': # initing from .pml file
-            contents = pickle.load(open(slideFilePath, 'rb'))
+            with open(slideFilePath, 'rb') as f:
+                contents = pickle.load(f)
             if newSlideFilePath:
                 self.slideFilePath = newSlideFilePath
             else:
@@ -438,7 +439,8 @@ class Slide:
         else:
             id = self.slideFileName
 
-        pickle.dump(self.tileDictionary, open(os.path.join(folder, id)+'.pml', 'wb'))
+        with open(os.path.join(folder, id)+'.pml', 'wb') as f:
+            pickle.dump(self.tileDictionary, f)
 
     def save(self, fileName=False, folder=os.getcwd()):
         """A function to save a pickled SliDL Slide object to a .pml file for re-use later
@@ -476,7 +478,8 @@ class Slide:
             else:
                 outputDict = {'slideFilePath': self.slideFilePath, 'tileDictionary': self.tileDictionary}
 
-        pickle.dump(outputDict, open(os.path.join(folder, id)+'.pml', 'wb'))
+        with open(os.path.join(folder, id)+'.pml', 'wb') as f:
+            pickle.dump(outputDict, f)
 
     def appendTag(self, tileAddress, key, val):
         """A function to add key-value pair of data to a certain tile in the tile dictionary.
@@ -1508,7 +1511,6 @@ class Slide:
                 annotationClasses.append(key)
         if len(annotationClasses) == 0:
             print('No annotations found in tile dictionary; sampling randomly from all suitable tiles')
-            #raise Warning('No annotations currently added to Slide tile dictionary; annotations can be added with addAnnotations()')
 
         # Collect all unannotated tiles
         unannotatedTileAddresses = []
@@ -1769,7 +1771,7 @@ class Slide:
         else:
             plt.show(block=False)
 
-    def inferClassifier(self, trainedModel, classNames, dataTransforms=None, batchSize=30, numWorkers=16, foregroundLevelThreshold=False, tissueLevelThreshold=False, overwriteExistingClassifications=False):
+    def inferClassifier(self, trainedModel, classNames, dataTransforms=None, batchSize=30, numWorkers=16, foregroundLevelThreshold=False, tissueLevelThreshold=False, overwriteExistingClassifications=False, silent=False):
         """A function to infer a trained classifier on a Slide object using
         PyTorch.
 
@@ -1782,6 +1784,7 @@ class Slide:
             foregroundLevelThreshold (str or int or float, optional): if defined as an int, only infers trainedModel on tiles with a 0-100 foregroundLevel value less or equal to than the set value (0 is a black tile, 100 is a white tile). Only infers on Otsu's method-passing tiles if set to 'otsu', or triangle algorithm-passing tiles if set to 'triangle'. Default is not to filter on foreground at all.
             tissueLevelThreshold (Bool, optional): if defined, only infers trainedModel on tiles with a 0 to 1 tissueLevel probability greater than or equal to the set value. Default is False.
             overwriteExistingClassifications (Bool, optional): whether to overwrite any existing classification inferences if they are already present in the tile dictionary. Default is False.
+            silent (Bool, optional): whether to silence tqdm for runing on servers
         """
 
         if not self.hasTileDictionary():
@@ -1814,7 +1817,7 @@ class Slide:
 
         pathSlideDataloader = torch.utils.data.DataLoader(pathSlideDataset, batch_size=batchSize, shuffle=False, num_workers=numWorkers)
         classifierPredictionTileAddresses = []
-        for inputs in tqdm(pathSlideDataloader):
+        for inputs in tqdm(pathSlideDataloader, disable=silent):
             inputTile = inputs['image'].to(device)
             output = trainedModel(inputTile)
             output = output.to(device)
@@ -1838,7 +1841,7 @@ class Slide:
         else:
             raise Warning('No suitable tiles found at current tissueLevelThreshold and foregroundLevelThreshold')
 
-    def inferSegmenter(self, trainedModel, classNames, dataTransforms=None, dtype='int', batchSize=1, numWorkers=16, foregroundLevelThreshold=False, tissueLevelThreshold=False, overwriteExistingSegmentations=False):#, saveInChunksAtFolder=False):
+    def inferSegmenter(self, trainedModel, classNames, dataTransforms=None, dtype='int', batchSize=1, numWorkers=16, foregroundLevelThreshold=False, tissueLevelThreshold=False, overwriteExistingSegmentations=False, silent=False):
         """A function to infer a trained segmentation model on a Slide object using
         PyTorch.
 
@@ -1852,7 +1855,7 @@ class Slide:
             foregroundLevelThreshold (str or int or float, optional): if defined as an int, only infers trainedModel on tiles with a 0-100 foregroundLevel value less or equal to than the set value (0 is a black tile, 100 is a white tile). Only infers on Otsu's method-passing tiles if set to 'otsu', or triangle algorithm-passing tiles if set to 'triangle'. Default is not to filter on foreground at all.
             tissueLevelThreshold (Bool, optional): if defined, only infers trainedModel on tiles with a 0 to 1 tissueLevel probability greater than or equal to the set value. Default is False.
             overwriteExistingSegmentations (Bool, optional): whether to overwrite any existing segmentation inferences if they are already present in the tile dictionary. Default is False.
-
+            silent (Bool, optional): whether to silence tqdm for runing on servers
         Example:
             slidl_slide.inferSegmenter(trained_model, classNames=class_names, batchSize=6, tissueLevelThreshold=0.995)
         """
@@ -1891,7 +1894,7 @@ class Slide:
         pathSlideDataloader = torch.utils.data.DataLoader(pathSlideDataset, batch_size=batchSize, shuffle=False, num_workers=numWorkers)
         segmenterPredictionTileAddresses = []
         counter = 0
-        for inputs in tqdm(pathSlideDataloader):
+        for inputs in tqdm(pathSlideDataloader, disable=silent):
             inputTile = inputs['image'].to(device)
 
             # input into net

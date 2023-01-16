@@ -88,7 +88,8 @@ class Slide:
         self.__verbose = verbose
 
         if slideFilePath[-4:] == '.pml': # initing from .pml file
-            contents = pickle.load(open(slideFilePath, 'rb'))
+            with open(slideFilePath, 'rb') as f:
+                contents = pickle.load(f)
             if newSlideFilePath:
                 self.slideFilePath = newSlideFilePath
             else:
@@ -438,7 +439,8 @@ class Slide:
         else:
             id = self.slideFileName
 
-        pickle.dump(self.tileDictionary, open(os.path.join(folder, id)+'.pml', 'wb'))
+        with open(os.path.join(folder, id)+'.pml', 'wb') as f:
+            pickle.dump(self.tileDictionary, f)
 
     def save(self, fileName=False, folder=os.getcwd()):
         """A function to save a pickled SliDL Slide object to a .pml file for re-use later
@@ -476,7 +478,8 @@ class Slide:
             else:
                 outputDict = {'slideFilePath': self.slideFilePath, 'tileDictionary': self.tileDictionary}
 
-        pickle.dump(outputDict, open(os.path.join(folder, id)+'.pml', 'wb'))
+        with open(os.path.join(folder, id)+'.pml', 'wb') as f:
+            pickle.dump(outputDict, f)
 
     def appendTag(self, tileAddress, key, val):
         """A function to add key-value pair of data to a certain tile in the tile dictionary.
@@ -1508,7 +1511,6 @@ class Slide:
                 annotationClasses.append(key)
         if len(annotationClasses) == 0:
             print('No annotations found in tile dictionary; sampling randomly from all suitable tiles')
-            #raise Warning('No annotations currently added to Slide tile dictionary; annotations can be added with addAnnotations()')
 
         # Collect all unannotated tiles
         unannotatedTileAddresses = []
@@ -1769,7 +1771,7 @@ class Slide:
         else:
             plt.show(block=False)
 
-    def inferClassifier(self, trainedModel, classNames, dataTransforms=None, batchSize=30, numWorkers=16, foregroundLevelThreshold=False, tissueLevelThreshold=False, overwriteExistingClassifications=False):
+    def inferClassifier(self, trainedModel, classNames, dataTransforms=None, batchSize=30, numWorkers=16, foregroundLevelThreshold=False, tissueLevelThreshold=False, overwriteExistingClassifications=False, silent=False):
         """A function to infer a trained classifier on a Slide object using
         PyTorch.
 
@@ -1782,6 +1784,7 @@ class Slide:
             foregroundLevelThreshold (str or int or float, optional): if defined as an int, only infers trainedModel on tiles with a 0-100 foregroundLevel value less or equal to than the set value (0 is a black tile, 100 is a white tile). Only infers on Otsu's method-passing tiles if set to 'otsu', or triangle algorithm-passing tiles if set to 'triangle'. Default is not to filter on foreground at all.
             tissueLevelThreshold (Bool, optional): if defined, only infers trainedModel on tiles with a 0 to 1 tissueLevel probability greater than or equal to the set value. Default is False.
             overwriteExistingClassifications (Bool, optional): whether to overwrite any existing classification inferences if they are already present in the tile dictionary. Default is False.
+            silent (Bool, optional): whether to silence tqdm for runing on servers
         """
 
         if not self.hasTileDictionary():
@@ -1814,31 +1817,32 @@ class Slide:
 
         pathSlideDataloader = torch.utils.data.DataLoader(pathSlideDataset, batch_size=batchSize, shuffle=False, num_workers=numWorkers)
         classifierPredictionTileAddresses = []
-        for inputs in tqdm(pathSlideDataloader):
-            inputTile = inputs['image'].to(device)
-            output = trainedModel(inputTile)
-            output = output.to(device)
+        with torch.no_grad():
+            for inputs in tqdm(pathSlideDataloader, disable=silent):
+                inputTile = inputs['image'].to(device)
+                output = trainedModel(inputTile)
+                output = output.to(device)
 
-            batch_prediction = torch.nn.functional.softmax(
-                output, dim=1).cpu().data.numpy()
+                batch_prediction = torch.nn.functional.softmax(
+                    output, dim=1).cpu().data.numpy()
 
-            for index in range(len(inputTile)):
-                tileAddress = (inputs['tileAddress'][0][index].item(),
-                               inputs['tileAddress'][1][index].item())
-                preds = batch_prediction[index, ...].tolist()
-                if len(preds) != len(classNames):
-                    raise ValueError('Model has '+str(len(preds))+' classes but only '+str(len(classNames))+' class names were provided in the classes argument')
-                prediction = {}
-                for i, pred in enumerate(preds):
-                    prediction[classNames[i]] = pred
-                self.appendTag(tileAddress, 'classifierInferencePrediction', prediction)
-                classifierPredictionTileAddresses.append(tileAddress)
+                for index in range(len(inputTile)):
+                    tileAddress = (inputs['tileAddress'][0][index].item(),
+                                inputs['tileAddress'][1][index].item())
+                    preds = batch_prediction[index, ...].tolist()
+                    if len(preds) != len(classNames):
+                        raise ValueError('Model has '+str(len(preds))+' classes but only '+str(len(classNames))+' class names were provided in the classes argument')
+                    prediction = {}
+                    for i, pred in enumerate(preds):
+                        prediction[classNames[i]] = pred
+                    self.appendTag(tileAddress, 'classifierInferencePrediction', prediction)
+                    classifierPredictionTileAddresses.append(tileAddress)
         if len(classifierPredictionTileAddresses) > 0:
             self.classifierPredictionTileAddresses = classifierPredictionTileAddresses
         else:
             raise Warning('No suitable tiles found at current tissueLevelThreshold and foregroundLevelThreshold')
 
-    def inferSegmenter(self, trainedModel, classNames, dataTransforms=None, dtype='int', batchSize=1, numWorkers=16, foregroundLevelThreshold=False, tissueLevelThreshold=False, overwriteExistingSegmentations=False):#, saveInChunksAtFolder=False):
+    def inferSegmenter(self, trainedModel, classNames, dataTransforms=None, dtype='int', batchSize=1, numWorkers=16, foregroundLevelThreshold=False, tissueLevelThreshold=False, overwriteExistingSegmentations=False, silent=False):
         """A function to infer a trained segmentation model on a Slide object using
         PyTorch.
 
@@ -1852,7 +1856,7 @@ class Slide:
             foregroundLevelThreshold (str or int or float, optional): if defined as an int, only infers trainedModel on tiles with a 0-100 foregroundLevel value less or equal to than the set value (0 is a black tile, 100 is a white tile). Only infers on Otsu's method-passing tiles if set to 'otsu', or triangle algorithm-passing tiles if set to 'triangle'. Default is not to filter on foreground at all.
             tissueLevelThreshold (Bool, optional): if defined, only infers trainedModel on tiles with a 0 to 1 tissueLevel probability greater than or equal to the set value. Default is False.
             overwriteExistingSegmentations (Bool, optional): whether to overwrite any existing segmentation inferences if they are already present in the tile dictionary. Default is False.
-
+            silent (Bool, optional): whether to silence tqdm for runing on servers
         Example:
             slidl_slide.inferSegmenter(trained_model, classNames=class_names, batchSize=6, tissueLevelThreshold=0.995)
         """
@@ -1890,63 +1894,64 @@ class Slide:
 
         pathSlideDataloader = torch.utils.data.DataLoader(pathSlideDataset, batch_size=batchSize, shuffle=False, num_workers=numWorkers)
         segmenterPredictionTileAddresses = []
-        counter = 0
-        for inputs in tqdm(pathSlideDataloader):
-            inputTile = inputs['image'].to(device)
 
-            # input into net
-            output = trainedModel(inputTile)
-            output = output.to(device)
+        with torch.no_grad():
+            for inputs in tqdm(pathSlideDataloader, disable=silent):
+                inputTile = inputs['image'].to(device)
 
-            if trainedModel.n_classes > 1:
-                batch_probs = F.softmax(output, dim=1)
-            else:
-                batch_probs = torch.sigmoid(output)
+                # input into net
+                output = trainedModel(inputTile)
+                output = output.to(device)
 
-            for index in range(len(inputTile)):
-                tileAddress = (inputs['tileAddress'][0][index].item(),
-                               inputs['tileAddress'][1][index].item())
+                if trainedModel.n_classes > 1:
+                    batch_probs = F.softmax(output, dim=1)
+                else:
+                    batch_probs = torch.sigmoid(output)
 
-                tile_probs = batch_probs[index, ...]
+                for index in range(len(inputTile)):
+                    tileAddress = (inputs['tileAddress'][0][index].item(),
+                                inputs['tileAddress'][1][index].item())
 
-                tile_probs = tile_probs.squeeze(0)
+                    tile_probs = batch_probs[index, ...]
 
-                tf = transforms.Compose([
-                    transforms.ToPILImage(),
-                    transforms.Resize(pathSlideDataset.tileSize),
-                    transforms.ToTensor() # converts from HWC to CWH and divides by 255
-                ])
+                    tile_probs = tile_probs.squeeze(0)
 
-                tile_probs = tf(tile_probs.cpu())
-                full_mask = tile_probs.squeeze().cpu().numpy()
+                    tf = transforms.Compose([
+                        transforms.ToPILImage(),
+                        transforms.Resize(pathSlideDataset.tileSize),
+                        transforms.ToTensor() # converts from HWC to CWH and divides by 255
+                    ])
 
-                if (len(full_mask.shape) == 2 and len(classNames) == 1):
-                    pass
-                elif (len(full_mask.shape) == 2 and len(classNames) != 1):
-                    raise ValueError('Model has 1 output class but '+str(len(classNames))+' class names were provided in the classes argument')
-                elif full_mask.shape[0] != len(classNames):
-                    raise ValueError('Model has '+str(full_mask.shape[-1])+' output classes but only '+str(len(classNames))+' class names were provided in the classes argument')
+                    tile_probs = tf(tile_probs.cpu())
+                    full_mask = tile_probs.squeeze().cpu().numpy()
 
-                segmentation_masks = {}
+                    if (len(full_mask.shape) == 2 and len(classNames) == 1):
+                        pass
+                    elif (len(full_mask.shape) == 2 and len(classNames) != 1):
+                        raise ValueError('Model has 1 output class but '+str(len(classNames))+' class names were provided in the classes argument')
+                    elif full_mask.shape[0] != len(classNames):
+                        raise ValueError('Model has '+str(full_mask.shape[-1])+' output classes but only '+str(len(classNames))+' class names were provided in the classes argument')
 
-                if len(full_mask.shape) == 2: # only one output class
-                    if dtype == 'int':
-                        segmentation_masks[classNames[0]] = (full_mask * 255).astype(np.uint8)
-                    elif dtype == 'float':
-                        segmentation_masks[classNames[0]] = full_mask
-                    else:
-                        raise ValueError("'dtype' must be 'float' or 'int'")
-                else: # multiple output classes
-                    for class_index in len(classNames):
+                    segmentation_masks = {}
+
+                    if len(full_mask.shape) == 2: # only one output class
                         if dtype == 'int':
-                            segmentation_masks[classNames[class_index]] = (full_mask[class_index,...] * 255).astype(np.uint8)
+                            segmentation_masks[classNames[0]] = (full_mask * 255).astype(np.uint8)
                         elif dtype == 'float':
-                            segmentation_masks[classNames[class_index]] = full_mask[class_index,...]
+                            segmentation_masks[classNames[0]] = full_mask
                         else:
                             raise ValueError("'dtype' must be 'float' or 'int'")
+                    else: # multiple output classes
+                        for class_index in len(classNames):
+                            if dtype == 'int':
+                                segmentation_masks[classNames[class_index]] = (full_mask[class_index,...] * 255).astype(np.uint8)
+                            elif dtype == 'float':
+                                segmentation_masks[classNames[class_index]] = full_mask[class_index,...]
+                            else:
+                                raise ValueError("'dtype' must be 'float' or 'int'")
 
-                self.appendTag(tileAddress, 'segmenterInferencePrediction', segmentation_masks)
-                segmenterPredictionTileAddresses.append(tileAddress)
+                    self.appendTag(tileAddress, 'segmenterInferencePrediction', segmentation_masks)
+                    segmenterPredictionTileAddresses.append(tileAddress)
 
         if len(segmenterPredictionTileAddresses) > 0:
             self.segmenterPredictionTileAddresses = segmenterPredictionTileAddresses
